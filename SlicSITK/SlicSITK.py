@@ -265,40 +265,29 @@ class SlicSITKLogic(ScriptedLoadableModuleLogic):
     #Apply SLic algorythm with choosen parameters on the input volume 
 
     ## Needed packages installation
-    try:
-      from skimage import io, segmentation, measure
-    except:
-        slicer.util.pip_install('scikit-image')
-        from skimage import io, segmentation, measure
+    import SimpleITK as sitk
 
-    try:
-      import numpy as np
-    except:
-        slicer.util.pip_install('numpy')
-        import numpy as np
-    try:
-      import SimpleITK as sitk
-    except:
-        print('no SimpleITK was found')
     ## Retrieve the inpute volume as a np array
     inputVolumeAsArray = slicer.util.arrayFromVolume(inputVolume)
 
-    ## Apply slic and retrieve labels
-    slic_segments = np.array(segmentation.slic(inputVolumeAsArray, 
-                            compactness=0.01, channel_axis=None,
-                            spacing=[1.12, 1.12, 1.26],
-                            max_num_iter=80, sigma=1),
-                        dtype=np.uint16)
-    labels =np.array(measure.label(slic_segments),
-                 dtype=np.uint16)
+    # Create a sitk image
+    image = sitk.GetImageFromArray(inputVolumeAsArray)
+
+    # Define slic filter
+    slic_filter = sitk.SLICImageFilter()
+
+    slic_label = slic_filter.Execute(image)
+
+    # Convert sitk image to array
+    slic_label_array = sitk.GetArrayFromImage(slic_label)
     print('Input VolumeAsArray', inputVolumeAsArray)
-    print('Labels', labels)
+    print('Labels', slic_label)
 
     # IJKtoRAS coordinate system
     ijkToRas = vtk.vtkMatrix4x4()
     inputVolume.GetIJKToRASMatrix(ijkToRas)
  
-    labelNode = slicer.util.addVolumeFromArray(labels, ijkToRAS=ijkToRas, name='SlicLabels', nodeClassName='vtkMRMLLabelMapVolumeNode')
+    labelNode = slicer.util.addVolumeFromArray(slic_label_array, ijkToRAS=ijkToRas, name='SlicLabels', nodeClassName='vtkMRMLLabelMapVolumeNode')
 
     stopTime = time.time()
     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
