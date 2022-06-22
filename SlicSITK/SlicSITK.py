@@ -84,7 +84,6 @@ class SlicSITKWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
     # (in the selected parameter node).
     self.ui.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
-    self.ui.outputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.updateParameterNodeFromGUI)
 
     # Buttons
     self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
@@ -177,10 +176,9 @@ class SlicSITKWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     # Update node selectors and sliders
     self.ui.inputSelector.setCurrentNode(self._parameterNode.GetNodeReference("InputVolume"))
-    self.ui.outputSelector.setCurrentNode(self._parameterNode.GetNodeReference("OutputVolume"))
 
     # Update buttons states and tooltips
-    if self._parameterNode.GetNodeReference("InputVolume") and self._parameterNode.GetNodeReference("OutputVolume"):
+    if self._parameterNode.GetNodeReference("InputVolume"):
       self.ui.applyButton.toolTip = "Compute output volume"
       self.ui.applyButton.enabled = True
     else:
@@ -202,7 +200,6 @@ class SlicSITKWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
 
     self._parameterNode.SetNodeReferenceID("InputVolume", self.ui.inputSelector.currentNodeID)
-    self._parameterNode.SetNodeReferenceID("OutputVolume", self.ui.outputSelector.currentNodeID)
 
     self._parameterNode.EndModify(wasModified)
 
@@ -213,7 +210,7 @@ class SlicSITKWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     with slicer.util.tryWithErrorDisplay("Failed to compute results.", waitCursor=True):
 
       # Compute output
-      self.logic.process(self.ui.inputSelector.currentNode(), self.ui.outputSelector.currentNode())
+      self.logic.process(self.ui.inputSelector.currentNode())
 
 
 #
@@ -245,16 +242,15 @@ class SlicSITKLogic(ScriptedLoadableModuleLogic):
     if not parameterNode.GetParameter("Invert"):
       parameterNode.SetParameter("Invert", "false")
 
-  def process(self, inputVolume, outputVolume, showResult=True):
+  def process(self, inputVolume, showResult=True):
     """
     Run the processing algorithm.
     Can be used without GUI widget.
     :param inputVolume: volume to be thresholded
-    :param outputVolume: thresholding result
     :param showResult: show output volume in slice viewers
     """
 
-    if not inputVolume or not outputVolume:
+    if not inputVolume :
       raise ValueError("Input or output volume is invalid")
 
     import time
@@ -287,7 +283,12 @@ class SlicSITKLogic(ScriptedLoadableModuleLogic):
     ijkToRas = vtk.vtkMatrix4x4()
     inputVolume.GetIJKToRASMatrix(ijkToRas)
  
-    labelNode = slicer.util.addVolumeFromArray(slic_label_array, ijkToRAS=ijkToRas, name='SlicLabels', nodeClassName='vtkMRMLLabelMapVolumeNode')
+    #Create node for labelmap
+    labelmapVolumeNode = slicer.util.addVolumeFromArray(slic_label_array, ijkToRAS=ijkToRas, name='SlicLabels', nodeClassName='vtkMRMLLabelMapVolumeNode')
+
+    # Create segmentation node from labelmap
+    seg = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+    slicer.modules.segmentations.logic().ImportLabelmapToSegmentationNode(labelmapVolumeNode, seg)
 
     stopTime = time.time()
     logging.info(f'Processing completed in {stopTime-startTime:.2f} seconds')
@@ -339,13 +340,11 @@ class SlicSITKTest(ScriptedLoadableModuleTest):
     inputScalarRange = inputVolume.GetImageData().GetScalarRange()
     self.assertEqual(inputScalarRange[0], 0)
 
-    outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-
     # Test the module logic
 
     logic = SlicSITKLogic()
 
     # Test algorithm with non-inverted threshold
-    logic.process(inputVolume, outputVolume, True)
+    logic.process(inputVolume, True)
 
     self.delayDisplay('Test passed')
